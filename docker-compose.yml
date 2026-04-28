@@ -1,0 +1,80 @@
+services:
+  hikvision-live:
+    build: .
+    ports:
+      - "8335:8335"
+    volumes:
+      - ./.env:/app/.env
+    environment:
+      - CAMERA_USER=${CAMERA_USER:-admin}
+      - CAMERA_PASSWORD=${CAMERA_PASSWORD:-1q2w3e4r5t}
+      - ALLOWED_IPS=${ALLOWED_IPS:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}
+      - MAX_BODY_SIZE=${MAX_BODY_SIZE:-1048576}
+      - ENFORCE_CLIENT_IP_RULES=${ENFORCE_CLIENT_IP_RULES:-false}
+      - DEFAULT_CLIENT_ID=${DEFAULT_CLIENT_ID:-anonymous}
+      - FFMPEG_PATH=${FFMPEG_PATH:-ffmpeg}
+      - STREAM_TARGET_FPS=${STREAM_TARGET_FPS:-8}
+      - STREAM_WIDTH=${STREAM_WIDTH:-640}
+      - STREAM_QUALITY=${STREAM_QUALITY:-5}
+      - STREAM_READ_TIMEOUT_SECONDS=${STREAM_READ_TIMEOUT_SECONDS:-2.5}
+      - STREAM_STARTUP_TIMEOUT_SECONDS=${STREAM_STARTUP_TIMEOUT_SECONDS:-12}
+      - HOST=0.0.0.0
+      - PORT=8335
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8335/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  wireguard:
+    profiles: ["vpn"]
+    image: ${WIREGUARD_IMAGE:-lscr.io/linuxserver/wireguard:latest}
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=${WIREGUARD_PUID:-1000}
+      - PGID=${WIREGUARD_PGID:-1000}
+      - TZ=${WIREGUARD_TZ:-Asia/Tashkent}
+      - LOG_CONFS=${WIREGUARD_LOG_CONFS:-true}
+    volumes:
+      - ./wireguard:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "8335:8335"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+  hikvision-live-vpn:
+    profiles: ["vpn"]
+    build: .
+    network_mode: "service:wireguard"
+    depends_on:
+      - wireguard
+    volumes:
+      - ./.env:/app/.env
+    environment:
+      - CAMERA_USER=${CAMERA_USER:-admin}
+      - CAMERA_PASSWORD=${CAMERA_PASSWORD:-1q2w3e4r5t}
+      - ALLOWED_IPS=${ALLOWED_IPS:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}
+      - MAX_BODY_SIZE=${MAX_BODY_SIZE:-1048576}
+      - ENFORCE_CLIENT_IP_RULES=${ENFORCE_CLIENT_IP_RULES:-false}
+      - DEFAULT_CLIENT_ID=${DEFAULT_CLIENT_ID:-anonymous}
+      - FFMPEG_PATH=${FFMPEG_PATH:-ffmpeg}
+      - STREAM_TARGET_FPS=${STREAM_TARGET_FPS:-8}
+      - STREAM_WIDTH=${STREAM_WIDTH:-640}
+      - STREAM_QUALITY=${STREAM_QUALITY:-5}
+      - STREAM_READ_TIMEOUT_SECONDS=${STREAM_READ_TIMEOUT_SECONDS:-2.5}
+      - STREAM_STARTUP_TIMEOUT_SECONDS=${STREAM_STARTUP_TIMEOUT_SECONDS:-12}
+      - HOST=0.0.0.0
+      - PORT=8335
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8335/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

@@ -84,5 +84,5 @@ def load_settings() -> Settings:
         stream_width=_get_env_int("STREAM_WIDTH", 640, minimum=160),
         stream_quality=_get_env_int("STREAM_QUALITY", 5, minimum=1),
         stream_read_timeout_seconds=_get_env_float("STREAM_READ_TIMEOUT_SECONDS", 2.5, minimum=0.2),
-        stream_startup_timeout_seconds=_get_env_float("STREAM_STARTUP_TIMEOUT_SECONDS", 12.0, minimum=1.0),
+        stream_startup_timeout_seconds=_get_env_float("STREAM_STARTUP_TIMEOUT_SECONDS", 25.0, minimum=1.0),
     )

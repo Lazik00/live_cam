@@ -60,7 +60,7 @@ The stream manager opens:
 | `STREAM_WIDTH` | `640` | Output frame width passed to FFmpeg scale filter |
 | `STREAM_QUALITY` | `5` | MJPEG quality value passed to FFmpeg |
 | `STREAM_READ_TIMEOUT_SECONDS` | `2.5` | Timeout for FFmpeg stdout read loop |
-| `STREAM_STARTUP_TIMEOUT_SECONDS` | `12` | Fail stream if no frame arrives within this time |
+| `STREAM_STARTUP_TIMEOUT_SECONDS` | `25` | Fail stream if no frame arrives within this time |
 | `HOST` | `0.0.0.0` | API host |
 | `PORT` | `8335` | API port |
 

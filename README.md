@@ -88,13 +88,13 @@ docker compose down
 
 ## Docker + WireGuard
 
-If the camera is reachable only through VPN, use the WireGuard sidecar profile instead of the direct container.
+If the camera is reachable only through VPN, the default Docker startup path in this repo now uses the WireGuard sidecar stack.
 
 1. Put your client config at `./wireguard/wg_confs/wg0.conf`.
-2. Start the VPN stack with explicit service names:
+2. Start the VPN stack:
 
 ```bash
-docker compose --profile vpn up -d --build wireguard hikvision-live-vpn
+docker compose up -d --build
 ```
 
 3. Check logs:
@@ -106,15 +106,24 @@ docker compose logs -f wireguard hikvision-live-vpn
 4. Stop the VPN stack:
 
 ```bash
-docker compose stop hikvision-live-vpn wireguard
+docker compose down
 ```
 
 Notes:
 
 - In VPN mode, port `8335` is published on the `wireguard` container because `hikvision-live-vpn` shares its network namespace.
-- Keep the normal `hikvision-live` service stopped while VPN mode is running, otherwise both variants will try to claim the same host port.
+- The direct `hikvision-live` service is now behind the `direct` profile, so it will not start unless you explicitly ask for it.
 - `./wireguard` is mounted into `/config`. Put client tunnel files under `./wireguard/wg_confs/`.
 - If your provider-generated config includes `AllowedIPs = 0.0.0.0/0, ::/0` and the tunnel fails with IPv6 issues, keep only `0.0.0.0/0`.
+- VPN streams can take longer to produce the first frame, so the default startup timeout is tuned higher than before.
+
+## Direct mode
+
+If you want the non-VPN container instead, start it explicitly:
+
+```bash
+docker compose --profile direct up -d --build hikvision-live
+```
 
 ## Quick checks
 

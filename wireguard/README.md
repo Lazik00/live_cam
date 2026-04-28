@@ -13,5 +13,5 @@ This repo uses the LinuxServer WireGuard container in client mode. The container
 Recommended startup command:
 
 ```bash
-docker compose --profile vpn up -d --build wireguard hikvision-live-vpn
+docker compose up -d --build
 ```

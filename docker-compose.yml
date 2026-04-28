@@ -1,5 +1,6 @@
 services:
   hikvision-live:
+    profiles: ["direct"]
     build: .
     ports:
       - "8335:8335"
@@ -31,7 +32,6 @@ services:
       start_period: 40s
 
   wireguard:
-    profiles: ["vpn"]
     image: ${WIREGUARD_IMAGE:-lscr.io/linuxserver/wireguard:latest}
     cap_add:
       - NET_ADMIN
@@ -51,7 +51,6 @@ services:
     restart: unless-stopped
 
   hikvision-live-vpn:
-    profiles: ["vpn"]
     build: .
     network_mode: "service:wireguard"
     depends_on:

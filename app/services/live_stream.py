@@ -25,6 +25,8 @@ class StreamState:
     status: str = "starting"
     ffmpeg_pid: Optional[int] = None
     startup_deadline_monotonic: float = field(default=0.0, repr=False)
+    stderr_reader_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    stderr_tail: str = ""
 
 
 class LiveStreamManager:
@@ -38,6 +40,8 @@ class LiveStreamManager:
         camera_user: str,
         camera_password: str,
         ffmpeg_path: str = "ffmpeg",
+        rtsp_channel: int = 101,
+        reconnect_enabled: bool = False,
         target_fps: int = 8,
         frame_width: int = 640,
         quality: int = 5,
@@ -47,6 +51,8 @@ class LiveStreamManager:
         self.camera_user = camera_user
         self.camera_password = camera_password
         self.ffmpeg_path = ffmpeg_path
+        self.rtsp_channel = rtsp_channel
+        self.reconnect_enabled = reconnect_enabled
         self.target_fps = target_fps
         self.frame_width = frame_width
         self.quality = quality
@@ -65,6 +71,8 @@ class LiveStreamManager:
         return {
             "ffmpeg_path": self.ffmpeg_path,
             "ffmpeg_available": shutil.which(self.ffmpeg_path) is not None,
+            "rtsp_channel": self.rtsp_channel,
+            "reconnect_enabled": self.reconnect_enabled,
             "target_fps": self.target_fps,
             "frame_width": self.frame_width,
             "quality": self.quality,
@@ -75,7 +83,7 @@ class LiveStreamManager:
     def _rtsp_url(self, camera_ip: str) -> str:
         return (
             f"rtsp://{self.camera_user}:{self.camera_password}@"
-            f"{camera_ip}:554/Streaming/Channels/101"
+            f"{camera_ip}:554/Streaming/Channels/{self.rtsp_channel}"
         )
 
     def _serialize_state(self, state: StreamState) -> Dict[str, Any]:
@@ -88,9 +96,32 @@ class LiveStreamManager:
             "bytes_sent": state.bytes_sent,
             "last_frame_at": state.last_frame_at.isoformat() if state.last_frame_at else None,
             "last_error": state.last_error,
+            "stderr_tail": state.stderr_tail or None,
             "ffmpeg_pid": state.ffmpeg_pid,
             "reconnect_supported": state.reconnect_supported,
         }
+
+    async def _consume_stderr(self, state: StreamState, process: asyncio.subprocess.Process) -> None:
+        if process.stderr is None:
+            return
+
+        chunks: list[str] = []
+        try:
+            while True:
+                line = await process.stderr.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="ignore").strip()
+                if not text:
+                    continue
+                chunks.append(text)
+                if len(chunks) > 20:
+                    chunks = chunks[-20:]
+                state.stderr_tail = "\n".join(chunks)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("stderr consumer failed: client_id=%s error=%s", state.client_id, exc)
 
     async def get_stream(self, client_id: str) -> Optional[Dict[str, Any]]:
         async with self._lock:
@@ -99,6 +130,7 @@ class LiveStreamManager:
 
     async def _terminate_process(self, state: StreamState, reason: str) -> None:
         process = state.ffmpeg_process
+        stderr_task = state.stderr_reader_task
         if process is None:
             return
 
@@ -116,8 +148,16 @@ class LiveStreamManager:
                 process.kill()
                 await process.wait()
 
+        if stderr_task:
+            stderr_task.cancel()
+            try:
+                await stderr_task
+            except asyncio.CancelledError:
+                pass
+
         state.ffmpeg_process = None
         state.ffmpeg_pid = None
+        state.stderr_reader_task = None
 
     async def start_or_switch_stream(self, client_id: str, camera_ip: str) -> StreamState:
         """Ensure one active stream per client; old stream gets stop signal and process termination."""
@@ -195,13 +235,14 @@ class LiveStreamManager:
     def _ffmpeg_cmd(self, rtsp_url: str, use_reconnect: bool = True) -> list[str]:
         cmd = [
             self.ffmpeg_path,
+            "-nostdin",
             "-hide_banner",
             "-loglevel",
             "warning",
             "-rtsp_transport",
             "tcp",
         ]
-        if use_reconnect:
+        if use_reconnect and self.reconnect_enabled:
             cmd.extend([
                 "-reconnect",
                 "1",
@@ -225,30 +266,17 @@ class LiveStreamManager:
         ])
         return cmd
 
-    async def _read_stderr_tail(self, process: asyncio.subprocess.Process) -> str:
-        if process.stderr is None:
-            return ""
-        try:
-            data = await asyncio.wait_for(process.stderr.read(), timeout=0.2)
-        except asyncio.TimeoutError:
-            return ""
-        except Exception:
-            return ""
-
-        text = data.decode("utf-8", errors="ignore").strip()
-        if len(text) > 800:
-            return text[-800:]
-        return text
-
     async def stream_generator(self, request: Request, state: StreamState) -> AsyncGenerator[bytes, None]:
         buffer = bytearray()
         rtsp_url = self._rtsp_url(state.camera_ip)
         process: Optional[asyncio.subprocess.Process] = None
-        reconnect_supported = True
+        reconnect_supported = self.reconnect_enabled
 
         try:
             for attempt in range(2):
                 state.status = "starting"
+                state.last_error = None
+                state.stderr_tail = ""
                 state.startup_deadline_monotonic = asyncio.get_running_loop().time() + self.startup_timeout_seconds
                 process = await asyncio.create_subprocess_exec(
                     *self._ffmpeg_cmd(rtsp_url, use_reconnect=reconnect_supported),
@@ -258,6 +286,7 @@ class LiveStreamManager:
                 state.ffmpeg_process = process
                 state.ffmpeg_pid = process.pid
                 state.reconnect_supported = reconnect_supported
+                state.stderr_reader_task = asyncio.create_task(self._consume_stderr(state, process))
                 logger.info(
                     "ffmpeg process started: client_id=%s camera_ip=%s reconnect=%s pid=%s",
                     state.client_id,
@@ -298,14 +327,15 @@ class LiveStreamManager:
                         )
                         if startup_timed_out:
                             state.status = "startup_timeout"
-                            state.last_error = (
+                            state.last_error = state.stderr_tail or (
                                 f"no frames received within {self.startup_timeout_seconds} seconds"
                             )
                             logger.warning(
-                                "stream startup timeout: client_id=%s camera_ip=%s timeout=%s",
+                                "stream startup timeout: client_id=%s camera_ip=%s timeout=%s stderr=%s",
                                 state.client_id,
                                 state.camera_ip,
                                 self.startup_timeout_seconds,
+                                state.stderr_tail,
                             )
                             break
                         continue
@@ -339,7 +369,7 @@ class LiveStreamManager:
                         state.status = "streaming"
                         yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
 
-                stderr_tail = await self._read_stderr_tail(process)
+                stderr_tail = state.stderr_tail
                 if stderr_tail:
                     state.last_error = stderr_tail
                 if state.status in {"starting", "streaming"}:

@@ -58,6 +58,8 @@ class Settings:
     default_client_id: str
     enforce_client_ip_rules: bool
     ffmpeg_path: str
+    stream_rtsp_channel: int
+    stream_reconnect_enabled: bool
     stream_target_fps: int
     stream_width: int
     stream_quality: int
@@ -76,6 +78,8 @@ def load_settings() -> Settings:
         default_client_id=_get_env_str("DEFAULT_CLIENT_ID", "anonymous"),
         enforce_client_ip_rules=_get_env_bool("ENFORCE_CLIENT_IP_RULES", False),
         ffmpeg_path=_get_env_str("FFMPEG_PATH", "ffmpeg"),
+        stream_rtsp_channel=_get_env_int("STREAM_RTSP_CHANNEL", 101, minimum=1),
+        stream_reconnect_enabled=_get_env_bool("STREAM_RECONNECT_ENABLED", False),
         stream_target_fps=_get_env_int("STREAM_TARGET_FPS", 8, minimum=1),
         stream_width=_get_env_int("STREAM_WIDTH", 640, minimum=160),
         stream_quality=_get_env_int("STREAM_QUALITY", 5, minimum=1),

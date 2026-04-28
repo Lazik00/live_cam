@@ -54,6 +54,8 @@ The stream manager opens:
 | `ENFORCE_CLIENT_IP_RULES` | `false` | If `true`, request source IP must also match `ALLOWED_IPS` |
 | `DEFAULT_CLIENT_ID` | `anonymous` | Fallback client id for stream endpoint |
 | `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary path |
+| `STREAM_RTSP_CHANNEL` | `101` | Hikvision RTSP channel path suffix |
+| `STREAM_RECONNECT_ENABLED` | `false` | Enable FFmpeg reconnect flags only if your FFmpeg build supports them |
 | `STREAM_TARGET_FPS` | `8` | Target FPS for MJPEG output |
 | `STREAM_WIDTH` | `640` | Output frame width passed to FFmpeg scale filter |
 | `STREAM_QUALITY` | `5` | MJPEG quality value passed to FFmpeg |
